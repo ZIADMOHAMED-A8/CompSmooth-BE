@@ -1,0 +1,84 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum plansEnum {
+  FREE
+  PRO
+  SUPER
+}
+
+model Users {
+  id            String          @id @default(uuid())
+  email         String          @unique
+  name          String
+  role          Role            @default(USER)
+  password      String
+  refresh_token String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  payments      Payments[]
+  usageLogs     Usage_logs[]
+  subscriptions Subscriptions[]
+}
+
+model Plans {
+  id                    String          @id @default(uuid())
+  plan                  plansEnum
+  price                 String
+  monthly_request_limit Int
+  subscriptions         Subscriptions[]
+}
+
+model Payments {
+  id        String   @id @default(uuid())
+  userId    String
+  user      Users    @relation(fields: [userId], references: [id])
+  amount    Int
+  status    String
+  createdAt DateTime @default(now())
+}
+
+model Usage_logs {
+  id        String   @id @default(uuid())
+  userId    String
+  user      Users    @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+model Properties {
+  id            String   @id @default(uuid())
+  address       String
+  city          String
+  state         String
+  zip           String
+  latitude      Decimal
+  longitude     Decimal
+  beds          Int
+  baths         Decimal
+  sqft          Int
+  year_bulit    Int
+  property_type String
+  createdAt     DateTime @default(now())
+}
+
+model Subscriptions {
+  id     String @id @default(uuid())
+  userId String
+  user   Users  @relation(fields: [userId], references: [id])
+  planId String
+  plan   Plans  @relation(fields: [planId], references: [id])
+}
