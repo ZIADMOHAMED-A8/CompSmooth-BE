@@ -1,3 +1,4 @@
+import { compare } from "bcryptjs";
 import { prisma } from "../../lib/prisma.ts";
 import { AppError } from "../../utils/AppError.js";
 import { hashPassword, hashToken } from "../../utils/hash.js";
@@ -6,9 +7,23 @@ import {
   generateRefreshToken,
 } from "../../utils/jwt.js";
 
-function sanitizeUser(user) {
+function serializeUser(user) {
   const { password, refresh_token, ...safeUser } = user;
   return safeUser;
+}
+
+export async function register(req, res, next) {
+  try {
+    const result = await registerUser(req.body);
+
+    res.status(201).json({
+      success: true,
+      message: "User registered successfully.",
+      data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
 }
 
 export async function registerUser(input) {
@@ -47,8 +62,53 @@ export async function registerUser(input) {
   });
 
   return {
-    user: sanitizeUser(user),
+    user: serializeUser(user),
     accessToken,
     refreshToken,
   };
+}
+
+export async function login(req, res, next) {
+  try {
+    const data = req.body;
+    const existingUser = await prisma.users.findUnique({
+      where: { email: data.email },
+    });
+
+    if (!existingUser) {
+      return next(new AppError("User does not exist.", 404));
+    }
+
+    const passwordsMatching = await compare(data.password, existingUser.password);
+
+    if (!passwordsMatching) {
+      return next(new AppError("Wrong password.", 400));
+    }
+
+    const tokenPayload = {
+      userId: existingUser.id,
+      email: existingUser.email,
+      role: existingUser.role,
+    };
+
+    const accessToken = generateAccessToken(tokenPayload);
+    const refreshToken = generateRefreshToken({ userId: existingUser.id });
+    const hashedRefreshToken = await hashToken(refreshToken);
+
+    await prisma.users.update({
+      where: { id: existingUser.id },
+      data: { refresh_token: hashedRefreshToken },
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        user: serializeUser(existingUser),
+        accessToken,
+        refreshToken,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
 }
