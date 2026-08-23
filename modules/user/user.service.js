@@ -68,22 +68,63 @@ export async function registerUser(input) {
   };
 }
 
+function getUserPlan(user) {
+  const [userPlan] = user.subscriptions;
+  user.plan = userPlan ? userPlan.plan.plan : "FREE";
+  return user;
+}
+
 export async function login(req, res, next) {
   try {
     const data = req.body;
-    const existingUser = await prisma.users.findUnique({
+    const now = new Date();
+
+    let existingUser = await prisma.users.findUnique({
       where: { email: data.email },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        password: true,
+        createdAt: true,
+        updatedAt: true,
+        subscriptions: {
+          where: {
+            status: "ACTIVE",
+            expirationDate: {
+              gt: now,
+            },
+          },
+          orderBy: {
+            expirationDate: "desc",
+          },
+          take: 1,
+          select: {
+            plan: {
+              select: {
+                plan: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     if (!existingUser) {
       return next(new AppError("User does not exist.", 404));
     }
 
-    const passwordsMatching = await compare(data.password, existingUser.password);
+    const passwordsMatching = await compare(
+      data.password,
+      existingUser.password
+    );
 
     if (!passwordsMatching) {
       return next(new AppError("Wrong password.", 400));
     }
+
+    existingUser = getUserPlan(existingUser);
 
     const tokenPayload = {
       userId: existingUser.id,
@@ -92,7 +133,10 @@ export async function login(req, res, next) {
     };
 
     const accessToken = generateAccessToken(tokenPayload);
-    const refreshToken = generateRefreshToken({ userId: existingUser.id });
+    const refreshToken = generateRefreshToken({
+      userId: existingUser.id,
+    });
+
     const hashedRefreshToken = await hashToken(refreshToken);
 
     await prisma.users.update({
@@ -100,10 +144,12 @@ export async function login(req, res, next) {
       data: { refresh_token: hashedRefreshToken },
     });
 
+    const user = serializeUser(existingUser);
+
     res.status(200).json({
       success: true,
       data: {
-        user: serializeUser(existingUser),
+        user,
         accessToken,
         refreshToken,
       },
