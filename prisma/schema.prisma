@@ -21,6 +21,12 @@ enum plansEnum {
   SUPER
 }
 
+enum subsStatus {
+  ACTIVE
+  EXPIRED
+  REFUNDED
+}
+
 model Users {
   id            String          @id @default(uuid())
   email         String          @unique
@@ -50,6 +56,8 @@ model Payments {
   amount    Int
   status    String
   createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 model Usage_logs {
@@ -57,6 +65,8 @@ model Usage_logs {
   userId    String
   user      Users    @relation(fields: [userId], references: [id])
   createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 model Properties {
@@ -76,9 +86,21 @@ model Properties {
 }
 
 model Subscriptions {
-  id     String @id @default(uuid())
+  id String @id @default(uuid())
+
   userId String
   user   Users  @relation(fields: [userId], references: [id])
+
   planId String
   plan   Plans  @relation(fields: [planId], references: [id])
+
+  startDate      DateTime
+  expirationDate DateTime
+  status         subsStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([planId])
+  @@index([userId, status, expirationDate])
 }
