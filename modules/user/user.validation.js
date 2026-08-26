@@ -24,3 +24,9 @@ export const loginSchema = z.object({
     password: passwordSchema,
   }),
 });
+
+export const refreshTokenSchema = z.object({
+  body: z.object({
+    refreshToken: z.string().trim().min(1, "Refresh token is required."),
+  }),
+});
