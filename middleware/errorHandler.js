@@ -5,9 +5,14 @@ export function errorHandler(err, req, res, next) {
     return next(err);
   }
 
-  const statusCode = err instanceof AppError ? err.statusCode : 500;
-  const message =
-    err instanceof AppError ? err.message : "Internal server error";
+  const isJwtError =
+    err.name === "JsonWebTokenError" || err.name === "TokenExpiredError";
+  const statusCode = isJwtError ? 401 : err instanceof AppError ? err.statusCode : 500;
+  const message = isJwtError
+    ? "Invalid or expired refresh token."
+    : err instanceof AppError
+      ? err.message
+      : "Internal server error";
 
   if (statusCode >= 500) {
     console.error(err);

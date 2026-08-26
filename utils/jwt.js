@@ -22,3 +22,8 @@ export function generateRefreshToken(payload) {
   assertSecrets();
   return jwt.sign(payload, REFRESH_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRES_IN });
 }
+
+export function verifyRefreshToken(token) {
+  assertSecrets();
+  return jwt.verify(token, REFRESH_SECRET);
+}

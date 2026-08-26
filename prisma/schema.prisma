@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client"
   output   = "../generated/prisma"
@@ -8,23 +5,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-}
-
-enum Role {
-  USER
-  ADMIN
-}
-
-enum plansEnum {
-  FREE
-  PRO
-  SUPER
-}
-
-enum subsStatus {
-  ACTIVE
-  EXPIRED
-  REFUNDED
 }
 
 model Users {
@@ -37,8 +17,10 @@ model Users {
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
   payments      Payments[]
-  usageLogs     Usage_logs[]
   subscriptions Subscriptions[]
+  usageLogs     Usage_logs[]
+
+  @@index([email], map: "email_index")
 }
 
 model Plans {
@@ -52,10 +34,10 @@ model Plans {
 model Payments {
   id        String   @id @default(uuid())
   userId    String
-  user      Users    @relation(fields: [userId], references: [id])
   amount    Int
   status    String
   createdAt DateTime @default(now())
+  user      Users    @relation(fields: [userId], references: [id])
 
   @@index([userId])
 }
@@ -63,8 +45,8 @@ model Payments {
 model Usage_logs {
   id        String   @id @default(uuid())
   userId    String
-  user      Users    @relation(fields: [userId], references: [id])
   createdAt DateTime @default(now())
+  user      Users    @relation(fields: [userId], references: [id])
 
   @@index([userId])
 }
@@ -86,21 +68,34 @@ model Properties {
 }
 
 model Subscriptions {
-  id String @id @default(uuid())
-
-  userId String
-  user   Users  @relation(fields: [userId], references: [id])
-
-  planId String
-  plan   Plans  @relation(fields: [planId], references: [id])
-
+  id             String     @id @default(uuid())
+  userId         String
+  planId         String
+  createdAt      DateTime   @default(now())
+  expirationDate DateTime?
   startDate      DateTime
-  expirationDate DateTime
   status         subsStatus @default(ACTIVE)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt      DateTime   @updatedAt
+  plan           Plans      @relation(fields: [planId], references: [id])
+  user           Users      @relation(fields: [userId], references: [id])
 
   @@index([planId])
   @@index([userId, status, expirationDate])
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum plansEnum {
+  FREE
+  PRO
+  SUPER
+}
+
+enum subsStatus {
+  ACTIVE
+  EXPIRED
+  REFUNDED
 }

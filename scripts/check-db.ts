@@ -1,8 +1,8 @@
-import { prisma } from "../lib/prisma";
+import { prisma } from "../lib/prisma.ts";
 
 async function main() {
   await prisma.$queryRaw`SELECT 1 AS ok`;
-  const users = await prisma.user.count();
+  const users = await prisma.users.count();
   console.log("Connected to Neon Postgres successfully.");
   console.log(`User table ready. Current row count: ${users}`);
 }
