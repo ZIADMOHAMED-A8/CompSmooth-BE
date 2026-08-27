@@ -1,8 +1,14 @@
 import { Router } from "express";
 import asyncWrapper from "../../middlewares/asyncWrapper.js";
 import validate from "../../middlewares/validate.js";
-import { login, refreshToken, register } from "./user.service.js";
 import {
+  createCheckoutSession,
+  login,
+  refreshToken,
+  register,
+} from "./user.service.js";
+import {
+  createCheckoutSessionSchema,
   loginSchema,
   refreshTokenSchema,
   registerSchema,
@@ -14,6 +20,11 @@ const router = Router();
 
 router.post("/signup", validate(registerSchema), asyncWrapper(register));
 router.post("/login", validate(loginSchema), asyncWrapper(login));
+router.post(
+  "/create-checkout-session",
+  validate(createCheckoutSessionSchema),
+  asyncWrapper(createCheckoutSession)
+);
 router.post(
   "/refresh-token",
   validate(refreshTokenSchema),
