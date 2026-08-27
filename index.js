@@ -2,10 +2,18 @@ import "dotenv/config";
 import express from "express";
 import expressSanitizer from "express-sanitizer";
 import userController from "./modules/user/user.controller.js";
+import { stripeWebhook } from "./modules/user/user.service.js";
+import asyncWrapper from "./middlewares/asyncWrapper.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+app.post(
+  "/api/users/stripe-webhook",
+  express.raw({ type: "application/json" }),
+  asyncWrapper(stripeWebhook)
+);
 
 function sanitizeInput(value, sanitize, key = "") {
   if (key.toLowerCase().includes("password")) {
