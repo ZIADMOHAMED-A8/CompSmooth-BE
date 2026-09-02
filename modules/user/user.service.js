@@ -9,11 +9,12 @@ import {
 } from "../../utils/jwt.js";
 import stripe from "../../utils/stripe.js";
 import { decodeAccessToken } from "../../utils/decodeToken.js";
-
+import { fetchUser } from "../../utils/fetchUser.js";
 function serializeUser(user) {
   const { password, refresh_token, ...safeUser } = user;
   return safeUser;
 }
+
 
 export async function register(req, res) {
   const result = await registerUser(req.body);
@@ -106,40 +107,15 @@ export async function registerUser(input) {
 //   return user;
 // }
 
+
+
 export async function login(req, res) {
   const data = req.body;
   const now = new Date();
 
-  let existingUser = await prisma.users.findUnique({
-    where: { email: data.email },
-    select: {
-      id: true,
-      email: true,
-      name: true,
-      role: true,
-      password: true,
-      createdAt: true,
-      updatedAt: true,
-      subscriptions: {
-        where: {
-          status: "ACTIVE",
-          OR: [{ expirationDate: null }, { expirationDate: { gt: now } }],
-        },
-        orderBy: {
-          expirationDate: "desc",
-        },
-        take: 1,
-        select: {
-          plan: {
-            select: {
-              plan: true,
-              monthly_request_limit: true,
-            },
-          },
-        },
-      },
-    },
-  });
+  let existingUser = await fetchUser({
+    email:data.email
+  })
   console.log(existingUser);
 
   if (!existingUser) {
@@ -156,6 +132,7 @@ export async function login(req, res) {
   }
 
   // existingUser = getUserPlan(existingUser);
+
 
   const tokenPayload = {
     userId: existingUser.id,
@@ -372,16 +349,34 @@ async function storeSuccessfulCheckout(session) {
       return;
     }
 
-    await tx.subscriptions.updateMany({
+    const activePaidSubscriptions = await tx.subscriptions.findMany({
       where: {
         userId,
         status: "ACTIVE",
+        plan: {
+          plan: {
+            not: "FREE",
+          },
+        },
       },
-      data: {
-        status: "EXPIRED",
-        expirationDate: new Date(),
+      select: {
+        id: true,
       },
     });
+
+    if (activePaidSubscriptions.length > 0) {
+      await tx.subscriptions.updateMany({
+        where: {
+          id: {
+            in: activePaidSubscriptions.map((subscription) => subscription.id),
+          },
+        },
+        data: {
+          status: "EXPIRED",
+          expirationDate: new Date(),
+        },
+      });
+    }
 
     await tx.subscriptions.create({
       data: {
@@ -397,7 +392,7 @@ async function storeSuccessfulCheckout(session) {
       data: {
         id: session.id,
         userId,
-        amount: session.amount_total/100 ?? 0,
+        amount: Math.round((session.amount_total ?? 0) / 100),
         status: session.payment_status || "paid",
       },
     });
@@ -428,7 +423,7 @@ export async function createCheckoutSession(req, res) {
   }
 
   const { successUrl, cancelUrl } = getCheckoutUrls(req);
-
+  const idempotencyKey = crypto.randomUUID()
   const session = await stripe.checkout.sessions.create(
     {
       mode: "subscription",
@@ -447,6 +442,9 @@ export async function createCheckoutSession(req, res) {
           planId: plan.id,
         },
       },
+    },
+    {
+      idempotencyKey
     }
   );
 
