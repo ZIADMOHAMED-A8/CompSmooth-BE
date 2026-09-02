@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import expressSanitizer from "express-sanitizer";
+import propertyController from "./modules/property/property.controller.js";
 import userController from "./modules/user/user.controller.js";
 import { stripeWebhook } from "./modules/user/user.service.js";
 import asyncWrapper from "./middlewares/asyncWrapper.js";
@@ -64,6 +65,7 @@ app.get("/health", (req, res) => {
 });
 
 app.use("/api/users", userController);
+app.use("/api", propertyController);
 
 app.use(errorHandler);
 
