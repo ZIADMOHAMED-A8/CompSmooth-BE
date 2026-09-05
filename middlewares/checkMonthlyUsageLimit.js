@@ -18,42 +18,51 @@ export default async function checkMonthlyUsageLimit(req, res, next) {
 
     const now = new Date();
     const user = await fetchUser({id:userId})
-
+    console.log(user,"user u")
     if (!user) {
       throw new AppError("User does not exist.", 404);
     }
 
-    const subscription = getEffectiveSubscription(user.subscriptions);
-
-    if (!subscription) {
-      throw new AppError("User does not have an active subscription.", 403);
-    }
-
-    const monthlyLimit = subscription.plan.monthly_request_limit;
+   
+    const monthlyLimit = user.subscriptions.plan.monthly_request_limit
 
     if (monthlyLimit <= 0) {
       throw new AppError("Monthly request limit has been reached.", 429);
     }
+    console.log(user.subscriptions.plan.id=== Number(process.env.FREE_PLAN_ID), "zzzz")
+    console.log(user.subscriptions.plan.id)
+    console.log( Number(process.env.FREE_PLAN_ID))
 
+    
     const monthlyUsage = await prisma.usage_logs.count({
       where: {
         userId,
         createdAt: {
-          gte: getMonthStart(now),
+          gte:Number(user.subscriptions.plan.id)=== Number(process.env.FREE_PLAN_ID) ? getMonthStart(now) :  user.subscriptions.startDate,
         },
       },
     });
+    const monthlyUsaget = await prisma.usage_logs.findMany({
+      where: {
+        userId,
+        createdAt: {
+          gte:user.subscriptions.plan.id=== Number(process.env.FREE_PLAN_ID) ? getMonthStart(now) :  user.subscriptions.startDate,
+        },
+      },
+    });
+    console.log(monthlyUsaget  )
 
+    console.log(monthlyUsaget.length  )
     if (monthlyUsage >= monthlyLimit) {
       throw new AppError("Monthly request limit has been reached.", 429);
     }
 
-    req.subscription = subscription;
+    req.subscription = user.subscriptions;
     req.monthlyUsage = {
       used: monthlyUsage,
       limit: monthlyLimit,
       remaining: monthlyLimit - monthlyUsage,
-    };
+    }; 
 
     next();
   } catch (error) {

@@ -1,8 +1,5 @@
 import { prisma } from "../lib/prisma";
 
-
-
-
 function getPlanRank(subscription) {
   switch (subscription.plan?.plan) {
     case "SUPER":
@@ -34,12 +31,12 @@ function getEffectiveSubscription(subscriptions) {
   })[0];
 }
 
-
 export async function fetchUser(data) {
   const existingUser = await prisma.users.findUnique({
     where: data.id
       ? { id: data.id }
       : { email: data.email },
+
     select: {
       id: true,
       email: true,
@@ -48,6 +45,7 @@ export async function fetchUser(data) {
       password: true,
       createdAt: true,
       updatedAt: true,
+
       subscriptions: {
         where: {
           status: "ACTIVE",
@@ -72,5 +70,17 @@ export async function fetchUser(data) {
       },
     },
   });
-  return existingUser
+
+  if (!existingUser) {
+    return null;
+  }
+
+  const effectiveSubscription = getEffectiveSubscription(
+    existingUser.subscriptions
+  );
+
+  return {
+    ...existingUser,
+    subscriptions: effectiveSubscription ?? null,
+  };
 }
