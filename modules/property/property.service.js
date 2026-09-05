@@ -1,3 +1,4 @@
+
 import { prisma } from "../../lib/prisma.ts";
 import { AppError } from "../../utils/AppError.js";
 
@@ -39,7 +40,10 @@ async function requestComps(input) {
     try {
       data = JSON.parse(responseText);
     } catch {
-      throw new AppError("FastAPI comps backend returned invalid JSON.", 502);
+      throw new AppError(
+        "FastAPI comps backend returned invalid JSON.",
+        502
+      );
     }
   }
 
@@ -55,12 +59,9 @@ async function requestComps(input) {
   return data;
 }
 
-function firstDefined(...values) {
-  return values.find((value) => value !== undefined && value !== null);
-}
-
 function parseAddressParts(address) {
   const parts = address.split(",").map((part) => part.trim());
+
   const city = parts.at(-2);
   const stateZip = parts.at(-1) || "";
   const [state, zip] = stateZip.split(/\s+/);
@@ -86,7 +87,10 @@ function toNumber(value, fieldName) {
 }
 
 function toString(value, fieldName) {
-  if (typeof value !== "string" || value.trim().length === 0) {
+  if (
+    typeof value !== "string" ||
+    value.trim().length === 0
+  ) {
     throw new AppError(
       `FastAPI comps response is missing valid property field: ${fieldName}.`,
       502
@@ -96,65 +100,64 @@ function toString(value, fieldName) {
   return value.trim();
 }
 
-function getSubjectProperty(compsResult) {
-  return (
-    compsResult?.subject ||
-    compsResult?.subject_property ||
-    compsResult?.subjectProperty ||
-    compsResult?.property ||
-    compsResult?.property_details ||
-    compsResult?.propertyDetails ||
-    compsResult
-  );
-}
-
 function buildPropertyData(input, compsResult) {
-  const property = getSubjectProperty(compsResult);
-  const firstComp = Array.isArray(compsResult?.comps)
-    ? compsResult.comps[0]
-    : null;
+  const property = compsResult.subject;
   const addressParts = parseAddressParts(input.address);
 
   return {
+    propertyId: toString(
+      property.property_id,
+      "property_id"
+    ),
+
     address: toString(
-      firstDefined(property?.address, compsResult?.address, input.address),
+      compsResult.address,
       "address"
     ),
-    city: toString(firstDefined(property?.city, addressParts.city), "city"),
-    state: toString(firstDefined(property?.state, addressParts.state), "state"),
+
+    city: toString(
+      addressParts.city,
+      "city"
+    ),
+
+    state: toString(
+      addressParts.state,
+      "state"
+    ),
+
     zip: toString(
-      firstDefined(property?.zip, property?.zip_code, addressParts.zip),
+      addressParts.zip,
       "zip"
     ),
+
     latitude: toNumber(
-      firstDefined(property?.latitude, property?.lat),
+      property.latitude,
       "latitude"
     ),
+
     longitude: toNumber(
-      firstDefined(property?.longitude, property?.lng, property?.lon),
+      property.longitude,
       "longitude"
     ),
-    beds: Math.round(toNumber(property?.beds, "beds")),
-    baths: toNumber(property?.baths, "baths"),
-    sqft: Math.round(toNumber(property?.sqft, "sqft")),
+
+    beds: Math.round(
+      toNumber(property.beds, "beds")
+    ),
+
+    baths: toNumber(
+      property.baths,
+      "baths"
+    ),
+
+    sqft: Math.round(
+      toNumber(property.sqft, "sqft")
+    ),
+
     year_bulit: Math.round(
-      toNumber(
-        firstDefined(property?.year_bulit, property?.year_built),
-        "year_bulit"
-      )
+      toNumber(property.year_built, "year_built")
     ),
-    property_type: toString(
-      firstDefined(
-        property?.property_type,
-        property?.propertyType,
-        property?.property_type_normalized,
-        firstComp?.property_type,
-        firstComp?.propertyType,
-        firstComp?.property_type_normalized,
-        firstComp?.style
-      ),
-      "property_type"
-    ),
+
+    property_type: "single_family",
   };
 }
 
@@ -162,22 +165,38 @@ export async function runComps(req, res) {
   const userId = req.user?.userId;
 
   if (!userId) {
-    throw new AppError("Authentication token is required.", 401);
+    throw new AppError(
+      "Authentication token is required.",
+      401
+    );
   }
 
   const compsResult = await requestComps(req.body);
-  const propertyData = buildPropertyData(req.body, compsResult);
 
-  const [property] = await prisma.$transaction([
-    prisma.properties.create({
-      data: propertyData,
-    }),
-    prisma.usage_logs.create({
-      data: {
-        userId,
+  const propertyData = buildPropertyData(
+    req.body,
+    compsResult
+  );
+  console.log(propertyData)
+
+ const [property] = await prisma.$transaction([
+  prisma.properties.upsert({
+    where: {
+      propertyId_provider: {
+        propertyId: propertyData.propertyId,
+        provider: propertyData.provider ?? "REALTOR",
       },
-    }),
-  ]);
+    },
+    update: {},
+    create: propertyData,
+  }),
+
+  prisma.usage_logs.create({
+    data: {
+      userId,
+    },
+  }),
+]);
 
   res.status(201).json({
     success: true,
