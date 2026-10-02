@@ -45,10 +45,14 @@ model Payments {
 model Usage_logs {
   id        String   @id @default(uuid())
   userId    String
+  propertyId String?
   createdAt DateTime @default(now())
   user      Users    @relation(fields: [userId], references: [id])
+  property  Properties? @relation(fields: [propertyId], references: [id])
 
   @@index([userId])
+  @@index([userId, createdAt])
+  @@index([propertyId])
 }
 
 model Properties {
@@ -66,7 +70,9 @@ model Properties {
   sqft          Int
   year_bulit    Int
   property_type String
+  mao           Int?
   createdAt     DateTime @default(now())
+  usageLogs     Usage_logs[]
 
   @@unique([propertyId, provider])
 }

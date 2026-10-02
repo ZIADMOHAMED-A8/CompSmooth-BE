@@ -19,7 +19,7 @@ function getExpirationTime(subscription) {
     : Number.MAX_SAFE_INTEGER;
 }
 
-function getEffectiveSubscription(subscriptions) {
+export  function getEffectiveSubscription(subscriptions) {
   return [...subscriptions].sort((a, b) => {
     const planRankDiff = getPlanRank(b) - getPlanRank(a);
 

@@ -9,7 +9,7 @@ import {
 } from "../../utils/jwt.js";
 import stripe from "../../utils/stripe.js";
 import { decodeAccessToken } from "../../utils/decodeToken.js";
-import { fetchUser } from "../../utils/fetchUser.js";
+import { fetchUser, getEffectiveSubscription } from "../../utils/fetchUser.js";
 function serializeUser(user) {
   const { password, refresh_token, ...safeUser } = user;
   return safeUser;
@@ -399,10 +399,19 @@ async function storeSuccessfulCheckout(session) {
   });
 }
 
-export async function createCheckoutSession(req, res) {
+export async function createCheckoutSession(req, res,next) {
   const { planId } = req.body;
   const { userId } = decodeAccessToken(req);
+  const {plan:currentPlan}=await getPlan(req)
+  console.log(currentPlan)
+  console.log(String(currentPlan.id))
 
+  if(String(process.env.FREE_PLAN_ID)===String(planId)){
+    next(new AppError('you cant subscribe to free plan',400))
+  }
+  if(String(currentPlan.id)===String(planId)){
+    next(new AppError('you are already subscribed to this plan',400))
+  }
   const [user, plan] = await Promise.all([
     prisma.users.findUnique({
       where: { id: userId },
@@ -491,4 +500,29 @@ export async function stripeWebhook(req, res) {
   }
 
   res.status(200).json({ received: true });
+}
+
+async function getPlan (req){
+  const {userId}=decodeAccessToken(req)
+  
+  const user=await prisma.users.findUnique({
+    where:{
+      id:userId
+    },select:{
+      subscriptions:{
+        select:{
+          plan:true
+        }
+      }
+    }
+  })
+  return getEffectiveSubscription(user.subscriptions)
+}
+
+
+export const getUserPlan=async(req,res,next)=>{
+  const effectiveSub=await getPlan(req)
+  res.status(200).json({
+    effectiveSub
+  })
 }

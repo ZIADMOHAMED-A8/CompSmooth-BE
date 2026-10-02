@@ -3,6 +3,7 @@ import asyncWrapper from "../../middlewares/asyncWrapper.js";
 import validate from "../../middlewares/validate.js";
 import {
   createCheckoutSession,
+  getUserPlan,
   login,
   refreshToken,
   register,
@@ -13,9 +14,9 @@ import {
   refreshTokenSchema,
   registerSchema,
 } from "./user.validation.js";
-import { prisma } from "../../lib/prisma.js";
 import authorize from "../../middlewares/authorize.js";
 import { decodeAccessToken } from "../../utils/decodeToken.js";
+import { prisma } from "../../lib/prisma.js";
 const router = Router();
 
 router.post("/signup", validate(registerSchema), asyncWrapper(register));
@@ -48,4 +49,6 @@ router.post(
     res.status(200).json(user);
   })
 );
+
+router.get('/plan',getUserPlan)
 export default router;

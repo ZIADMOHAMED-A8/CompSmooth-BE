@@ -1,0 +1,2 @@
+-- Intentionally empty: this migration directory was created locally and does
+-- not create the removed PropertyRuns model.
