@@ -157,6 +157,8 @@ function buildPropertyData(input, compsResult) {
       toNumber(property.year_built, "year_built")
     ),
 
+    mao: Math.round(toNumber(compsResult.mao, "mao")),
+
     property_type: "single_family",
   };
 }
@@ -179,30 +181,100 @@ export async function runComps(req, res) {
   );
   console.log(propertyData)
 
- const [property] = await prisma.$transaction([
-  prisma.properties.upsert({
-    where: {
-      propertyId_provider: {
-        propertyId: propertyData.propertyId,
-        provider: propertyData.provider ?? "REALTOR",
+  const property = await prisma.$transaction(async (tx) => {
+    const property = await tx.properties.upsert({
+      where: {
+        propertyId_provider: {
+          propertyId: propertyData.propertyId,
+          provider: propertyData.provider ?? "REALTOR",
+        },
       },
-    },
-    update: {},
-    create: propertyData,
-  }),
+      update: {
+        mao: propertyData.mao,
+      },
+      create: propertyData,
+    });
 
-  prisma.usage_logs.create({
-    data: {
-      userId,
-    },
-  }),
-]);
+    await tx.usage_logs.create({
+      data: {
+        userId,
+        propertyId: property.id,
+      },
+    });
+
+    return property;
+  });
 
   res.status(201).json({
     success: true,
     data: {
       property,
       comps: compsResult,
+    },
+  });
+}
+
+export async function getProperties(req, res) {
+  const userId = req.user?.userId;
+
+  if (!userId) {
+    throw new AppError("Authentication token is required.", 401);
+  }
+
+  const { page, limit } = req.query;
+  const where = {
+    userId,
+    propertyId: { not: null },
+  };
+
+  const [usageLogs, total] = await prisma.$transaction([
+    prisma.usage_logs.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      skip: (page - 1) * limit,
+      take: limit,
+      select: {
+        propertyId: true,
+      },
+    }),
+    prisma.usage_logs.count({ where }),
+  ]);
+
+  const propertyIds = usageLogs
+    .map((usageLog) => usageLog.propertyId)
+    .filter((propertyId) => propertyId !== null);
+  const properties = await prisma.properties.findMany({
+    where: {
+      id: { in: propertyIds },
+    },
+    select: {
+      id: true,
+      mao: true,
+      address: true,
+      beds: true,
+      baths: true,
+    },
+  });
+  const propertiesById = new Map(
+    properties.map((property) => [property.id, property])
+  );
+
+  const totalPages = Math.ceil(total / limit);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      properties: propertyIds
+        .map((propertyId) => propertiesById.get(propertyId))
+        .filter(Boolean),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1,
+      },
     },
   });
 }
