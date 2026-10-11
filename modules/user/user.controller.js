@@ -3,16 +3,19 @@ import asyncWrapper from "../../middlewares/asyncWrapper.js";
 import validate from "../../middlewares/validate.js";
 import {
   createCheckoutSession,
+  getProfile,
   getUserPlan,
   login,
   refreshToken,
   register,
+  updateProfile,
 } from "./user.service.js";
 import {
   createCheckoutSessionSchema,
   loginSchema,
   refreshTokenSchema,
   registerSchema,
+  updateProfileSchema,
 } from "./user.validation.js";
 import authorize from "../../middlewares/authorize.js";
 import { decodeAccessToken } from "../../utils/decodeToken.js";
@@ -30,6 +33,13 @@ router.post(
   "/refresh-token",
   validate(refreshTokenSchema),
   asyncWrapper(refreshToken)
+);
+router.get("/profile", authorize(["USER"]), asyncWrapper(getProfile));
+router.patch(
+  "/profile",
+  authorize(["USER"]),
+  validate(updateProfileSchema),
+  asyncWrapper(updateProfile)
 );
 router.post(
   "/test",
@@ -50,5 +60,5 @@ router.post(
   })
 );
 
-router.get('/plan',getUserPlan)
+router.get("/plan", authorize(["USER"]), asyncWrapper(getUserPlan));
 export default router;

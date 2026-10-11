@@ -19,6 +19,7 @@ model Users {
   payments      Payments[]
   subscriptions Subscriptions[]
   usageLogs     Usage_logs[]
+  userProperties UserProperties[]
 
   @@index([email], map: "email_index")
 }
@@ -73,8 +74,23 @@ model Properties {
   mao           Int?
   createdAt     DateTime @default(now())
   usageLogs     Usage_logs[]
+  userProperties UserProperties[]
 
   @@unique([propertyId, provider])
+}
+
+model UserProperties {
+  id         String     @id @default(uuid())
+  userId     String
+  propertyId String
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  user       Users      @relation(fields: [userId], references: [id])
+  property   Properties @relation(fields: [propertyId], references: [id])
+
+  @@unique([userId, propertyId])
+  @@index([userId, updatedAt])
+  @@map("user_propeties")
 }
 
 model Subscriptions {
