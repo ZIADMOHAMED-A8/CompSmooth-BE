@@ -9,10 +9,20 @@ import {
 } from "../../utils/jwt.js";
 import stripe from "../../utils/stripe.js";
 import { decodeAccessToken } from "../../utils/decodeToken.js";
-import { fetchUser, getEffectiveSubscription } from "../../utils/fetchUser.js";
+import { fetchUser } from "../../utils/fetchUser.js";
 function serializeUser(user) {
   const { password, refresh_token, ...safeUser } = user;
   return safeUser;
+}
+
+function getAuthenticatedUserId(req) {
+  const userId = req.user?.userId ?? decodeAccessToken(req).userId;
+
+  if (!userId) {
+    throw new AppError("Authentication token is required.", 401);
+  }
+
+  return userId;
 }
 
 
@@ -223,6 +233,81 @@ export async function refreshToken(req, res) {
   });
 }
 
+export async function getProfile(req, res) {
+  const userId = getAuthenticatedUserId(req);
+
+  const user = await prisma.users.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      role: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+
+  if (!user) {
+    throw new AppError("User does not exist.", 404);
+  }
+
+  res.status(200).json({
+    success: true,
+    data: {
+      user,
+    },
+  });
+}
+
+export async function updateProfile(req, res) {
+  const userId = getAuthenticatedUserId(req);
+  const { email, name } = req.body;
+  const currentUser = await prisma.users.findUnique({
+    where: { id: userId },
+    select: { id: true },
+  });
+
+  if (!currentUser) {
+    throw new AppError("User does not exist.", 404);
+  }
+
+  if (email) {
+    const existingUser = await prisma.users.findUnique({
+      where: { email },
+      select: { id: true },
+    });
+
+    if (existingUser && existingUser.id !== userId) {
+      throw new AppError("Email is already registered.", 409);
+    }
+  }
+
+  const user = await prisma.users.update({
+    where: { id: userId },
+    data: {
+      ...(email ? { email } : {}),
+      ...(name ? { name } : {}),
+    },
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      role: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Profile updated successfully.",
+    data: {
+      user,
+    },
+  });
+}
+
 function getCheckoutUrls(req) {
   const fallbackBaseUrl = `${req.protocol}://${req.get("host")}`;
 
@@ -364,19 +449,19 @@ async function storeSuccessfulCheckout(session) {
       },
     });
 
-    if (activePaidSubscriptions.length > 0) {
-      await tx.subscriptions.updateMany({
-        where: {
-          id: {
-            in: activePaidSubscriptions.map((subscription) => subscription.id),
-          },
-        },
-        data: {
-          status: "EXPIRED",
-          expirationDate: new Date(),
-        },
-      });
-    }
+    // if (activePaidSubscriptions.length > 0) {
+    //   await tx.subscriptions.updateMany({
+    //     where: {
+    //       id: {
+    //         in: activePaidSubscriptions.map((subscription) => subscription.id),
+    //       },
+    //     },
+    //     data: {
+    //       status: "EXPIRED",
+    //       expirationDate: new Date(),
+    //     },
+    //   });
+    // }
 
     await tx.subscriptions.create({
       data: {
@@ -407,10 +492,13 @@ export async function createCheckoutSession(req, res,next) {
   console.log(String(currentPlan.id))
 
   if(String(process.env.FREE_PLAN_ID)===String(planId)){
-    next(new AppError('you cant subscribe to free plan',400))
+    return next(new AppError('you cant subscribe to free plan',400))
+    
   }
   if(String(currentPlan.id)===String(planId)){
-    next(new AppError('you are already subscribed to this plan',400))
+    return next(new AppError('you are already subscribed to this plan',400))
+    
+
   }
   const [user, plan] = await Promise.all([
     prisma.users.findUnique({
@@ -502,27 +590,91 @@ export async function stripeWebhook(req, res) {
   res.status(200).json({ received: true });
 }
 
-async function getPlan (req){
-  const {userId}=decodeAccessToken(req)
-  
-  const user=await prisma.users.findUnique({
-    where:{
-      id:userId
-    },select:{
-      subscriptions:{
-        select:{
-          plan:true
-        }
-      }
-    }
-  })
-  return getEffectiveSubscription(user.subscriptions)
+function getMonthStart(date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
 }
 
+async function getPlan(req) {
+  const userId = getAuthenticatedUserId(req);
 
-export const getUserPlan=async(req,res,next)=>{
-  const effectiveSub=await getPlan(req)
+  const user = await fetchUser({ id: userId });
+
+  if (!user) {
+    throw new AppError("User does not exist.", 404);
+  }
+
+  if (!user.subscriptions) {
+    throw new AppError("User does not have an active plan.", 404);
+  }
+
+  return user.subscriptions;
+}
+
+export async function getUserPlan(req, res) {
+  const userId = req.user?.userId;
+
+  if (!userId) {
+    throw new AppError("Authentication token is required.", 401);
+  }
+
+  const subscription = await getPlan(req);createCheckoutSession
+
+  const now = new Date();
+  const thisMonthStart = getMonthStart(now);
+  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const previousMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const usagePeriodStart =
+    subscription.plan.plan === "FREE" ? thisMonthStart : subscription.startDate;
+  const usageWhere = {
+    userId,
+    createdAt: {
+      gte: usagePeriodStart,
+    },
+  };
+
+  const [used, propertiesThisMonth, propertiesLastMonth] = await Promise.all([
+    prisma.usage_logs.count({ where: usageWhere }),
+    prisma.userProperties.count({
+      where: {
+        userId,
+        createdAt: {
+          gte: thisMonthStart,
+          lt: nextMonthStart,
+        },
+      },
+    }),
+    prisma.userProperties.count({
+      where: {
+        userId,
+        createdAt: {
+          gte: previousMonthStart,
+          lt: thisMonthStart,
+        },
+      },
+    }),
+  ]);
+
+  const limit = subscription.plan.monthly_request_limit;
+
   res.status(200).json({
-    effectiveSub
-  })
+    success: true,
+    data: {
+      plan: {
+        id: subscription.plan.id,
+        name: subscription.plan.plan,
+        startDate: subscription.startDate,
+        expirationDate: subscription.expirationDate,
+      },
+      usage: {
+        used,
+        limit,
+        remaining: Math.max(limit - used, 0),
+        periodStart: usagePeriodStart,
+      },
+      propertiesRan: {
+        thisMonth: propertiesThisMonth,
+        lastMonth: propertiesLastMonth,
+      },
+    },
+  });
 }

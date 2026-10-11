@@ -36,3 +36,19 @@ export const createCheckoutSessionSchema = z.object({
     planId: z.string().trim().min(1, "Plan id is required."),
   }),
 });
+
+export const updateProfileSchema = z.object({
+  body: z
+    .object({
+      email: z
+        .string()
+        .trim()
+        .toLowerCase()
+        .email("A valid email is required.")
+        .optional(),
+      name: z.string().trim().min(1, "Name is required.").optional(),
+    })
+    .refine((data) => Object.keys(data).length > 0, {
+      message: "At least one profile field is required.",
+    }),
+});

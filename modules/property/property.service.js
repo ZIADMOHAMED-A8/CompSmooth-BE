@@ -1,4 +1,5 @@
 
+import { toLowerCase } from "zod";
 import { prisma } from "../../lib/prisma.ts";
 import { AppError } from "../../utils/AppError.js";
 
@@ -78,7 +79,7 @@ function toNumber(value, fieldName) {
 
   if (!Number.isFinite(number)) {
     throw new AppError(
-      `FastAPI comps response is missing valid property field: ${fieldName}.`,
+      `FastAPI comps response is missing valid field: ${fieldName}.`,
       502
     );
   }
@@ -87,22 +88,77 @@ function toNumber(value, fieldName) {
 }
 
 function toString(value, fieldName) {
-  if (
-    typeof value !== "string" ||
-    value.trim().length === 0
-  ) {
+  if (value === null || value === undefined) {
     throw new AppError(
-      `FastAPI comps response is missing valid property field: ${fieldName}.`,
+      `FastAPI comps response is missing valid field: ${fieldName}.`,
       502
     );
   }
 
-  return value.trim();
+  const string = String(value).trim();
+
+  if (string.length === 0) {
+    throw new AppError(
+      `FastAPI comps response is missing valid field: ${fieldName}.`,
+      502
+    );
+  }
+
+  return string;
+}
+
+function getRequiredObject(value, fieldName) {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value)
+  ) {
+    throw new AppError(
+      `FastAPI comps response is missing valid field: ${fieldName}.`,
+      502
+    );
+  }
+
+  return value;
+}
+
+function firstDefined(...values) {
+  return values.find((value) => value !== undefined && value !== null);
+}
+
+function unwrapCompsResult(compsResult) {
+  const result = getRequiredObject(compsResult, "response");
+
+  if (result.subject) {
+    return result;
+  }
+
+  if (result.data?.comps?.subject) {
+    return result.data.comps;
+  }
+
+  if (result.data?.subject) {
+    return result.data;
+  }
+
+  return result;
 }
 
 function buildPropertyData(input, compsResult) {
-  const property = compsResult.subject;
-  const addressParts = parseAddressParts(input.address);
+  const result = unwrapCompsResult(compsResult);
+  const property = getRequiredObject(result.subject, "subject");
+  const deal = getRequiredObject(result.deal, "deal");
+  const address = toString(
+    result.address ?? input.address,
+    "address"
+  );
+  const addressParts = parseAddressParts(address);
+  const mao = firstDefined(
+    deal.mao,
+    result.mao,
+    deal.arv_70,
+    result.arv_70
+  );
 
   return {
     propertyId: toString(
@@ -110,10 +166,7 @@ function buildPropertyData(input, compsResult) {
       "property_id"
     ),
 
-    address: toString(
-      compsResult.address,
-      "address"
-    ),
+    address,
 
     city: toString(
       addressParts.city,
@@ -157,7 +210,7 @@ function buildPropertyData(input, compsResult) {
       toNumber(property.year_built, "year_built")
     ),
 
-    mao: Math.round(toNumber(compsResult.mao, "mao")),
+    mao: Math.round(toNumber(mao, "deal.mao")),
 
     property_type: "single_family",
   };
@@ -172,14 +225,12 @@ export async function runComps(req, res) {
       401
     );
   }
-
   const compsResult = await requestComps(req.body);
 
   const propertyData = buildPropertyData(
     req.body,
     compsResult
   );
-  console.log(propertyData)
 
   const property = await prisma.$transaction(async (tx) => {
     const property = await tx.properties.upsert({
@@ -197,6 +248,21 @@ export async function runComps(req, res) {
 
     await tx.usage_logs.create({
       data: {
+        userId,
+      },
+    });
+
+    await tx.userProperties.upsert({
+      where: {
+        userId_propertyId: {
+          userId,
+          propertyId: property.id,
+        },
+      },
+      update: {
+        updatedAt: new Date(),
+      },
+      create: {
         userId,
         propertyId: property.id,
       },
@@ -222,51 +288,34 @@ export async function getProperties(req, res) {
   }
 
   const { page, limit } = req.query;
-  const where = {
-    userId,
-    propertyId: { not: null },
-  };
+  const where = { userId };
 
-  const [usageLogs, total] = await prisma.$transaction([
-    prisma.usage_logs.findMany({
+  const [userProperties, total] = await prisma.$transaction([
+    prisma.userProperties.findMany({
       where,
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
       skip: (page - 1) * limit,
       take: limit,
       select: {
-        propertyId: true,
+        property: {
+          select: {
+            mao: true,
+            address: true,
+            beds: true,
+            baths: true,
+          },
+        },
       },
     }),
-    prisma.usage_logs.count({ where }),
+    prisma.userProperties.count({ where }),
   ]);
-
-  const propertyIds = usageLogs
-    .map((usageLog) => usageLog.propertyId)
-    .filter((propertyId) => propertyId !== null);
-  const properties = await prisma.properties.findMany({
-    where: {
-      id: { in: propertyIds },
-    },
-    select: {
-      id: true,
-      mao: true,
-      address: true,
-      beds: true,
-      baths: true,
-    },
-  });
-  const propertiesById = new Map(
-    properties.map((property) => [property.id, property])
-  );
 
   const totalPages = Math.ceil(total / limit);
 
   res.status(200).json({
     success: true,
     data: {
-      properties: propertyIds
-        .map((propertyId) => propertiesById.get(propertyId))
-        .filter(Boolean),
+      properties: userProperties.map((userProperty) => userProperty.property),
       pagination: {
         page,
         limit,
