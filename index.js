@@ -7,6 +7,7 @@ import { stripeWebhook } from "./modules/user/user.service.js";
 import asyncWrapper from "./middlewares/asyncWrapper.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import plansController from "./modules/plans/plans.controller.js";
+import otpController from "./modules/otp/otp.controller.js";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -66,6 +67,7 @@ app.get("/health", (req, res) => {
 });
 
 app.use("/api/users", userController);
+app.use("/api/otp", otpController);
 app.use("/api", propertyController);
 app.use('/api/plans',plansController)
 app.use(errorHandler);

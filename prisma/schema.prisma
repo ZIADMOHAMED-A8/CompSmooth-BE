@@ -8,20 +8,35 @@ datasource db {
 }
 
 model Users {
-  id            String          @id @default(uuid())
-  email         String          @unique
-  name          String
-  role          Role            @default(USER)
-  password      String
-  refresh_token String?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  payments      Payments[]
-  subscriptions Subscriptions[]
-  usageLogs     Usage_logs[]
+  id             String           @id @default(uuid())
+  email          String           @unique
+  name           String
+  role           Role             @default(USER)
+  password       String
+  refresh_token  String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  payments       Payments[]
+  subscriptions  Subscriptions[]
+  usageLogs      Usage_logs[]
   userProperties UserProperties[]
 
   @@index([email], map: "email_index")
+}
+
+model OTPs {
+  id            String     @id @default(uuid())
+  destination   String
+  purpose       OtpPurpose
+  codeHash      String
+  expiresAt     DateTime
+  consumedAt    DateTime?
+  invalidatedAt DateTime?
+  attemptCount  Int        @default(0)
+  createdAt     DateTime   @default(now())
+
+  @@index([destination, purpose, expiresAt])
+  @@index([expiresAt])
 }
 
 model Plans {
@@ -44,12 +59,12 @@ model Payments {
 }
 
 model Usage_logs {
-  id        String   @id @default(uuid())
-  userId    String
+  id         String      @id @default(uuid())
+  userId     String
   propertyId String?
-  createdAt DateTime @default(now())
-  user      Users    @relation(fields: [userId], references: [id])
-  property  Properties? @relation(fields: [propertyId], references: [id])
+  createdAt  DateTime    @default(now())
+  user       Users       @relation(fields: [userId], references: [id])
+  property   Properties? @relation(fields: [propertyId], references: [id])
 
   @@index([userId])
   @@index([userId, createdAt])
@@ -57,23 +72,23 @@ model Usage_logs {
 }
 
 model Properties {
-  id            String   @id @default(uuid())
-  address       String
-  city          String
-  state         String
+  id             String           @id @default(uuid())
+  address        String
+  city           String
+  state          String
   propertyId     String
-  provider      providerEnum @default(REALTOR)
-  zip           String
-  latitude      Decimal
-  longitude     Decimal
-  beds          Int
-  baths         Decimal
-  sqft          Int
-  year_bulit    Int
-  property_type String
-  mao           Int?
-  createdAt     DateTime @default(now())
-  usageLogs     Usage_logs[]
+  provider       providerEnum     @default(REALTOR)
+  zip            String
+  latitude       Decimal
+  longitude      Decimal
+  beds           Int
+  baths          Decimal
+  sqft           Int
+  year_bulit     Int
+  property_type  String
+  mao            Int?
+  createdAt      DateTime         @default(now())
+  usageLogs      Usage_logs[]
   userProperties UserProperties[]
 
   @@unique([propertyId, provider])
@@ -94,8 +109,8 @@ model UserProperties {
 }
 
 model Subscriptions {
-  id             String     @id @default(uuid())
-  
+  id String @id @default(uuid())
+
   userId         String
   planId         String
   createdAt      DateTime   @default(now())
@@ -126,8 +141,15 @@ enum subsStatus {
   EXPIRED
   REFUNDED
 }
-enum providerEnum{
+
+enum providerEnum {
   REALTOR
   ZILLOW
   REDFIN
+}
+
+enum OtpPurpose {
+  SIGN_UP
+  PASSWORD_RESET
+  EMAIL_VERIFICATION
 }

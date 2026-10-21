@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import { createHash, timingSafeEqual } from "node:crypto";
 
 const SALT_ROUNDS = 12;
+const OTP_SALT_ROUNDS = 10;
 const TOKEN_HASH_ALGORITHM = "sha256";
 
 export async function hashPassword(password) {
@@ -10,6 +11,14 @@ export async function hashPassword(password) {
 
 export async function comparePassword(password, hashedPassword) {
   return bcrypt.compare(password, hashedPassword);
+}
+
+export async function hashOtp(otp) {
+  return bcrypt.hash(otp, OTP_SALT_ROUNDS);
+}
+
+export async function compareOtp(otp, hashedOtp) {
+  return bcrypt.compare(otp, hashedOtp);
 }
 
 export async function hashToken(token) {
