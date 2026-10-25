@@ -5,6 +5,7 @@ import { compareToken, hashPassword, hashToken } from "../../utils/hash.js";
 import {
   generateAccessToken,
   generateRefreshToken,
+  verifyOtpVerificationToken,
   verifyRefreshToken,
 } from "../../utils/jwt.js";
 import stripe from "../../utils/stripe.js";
@@ -25,6 +26,25 @@ function getAuthenticatedUserId(req) {
   return userId;
 }
 
+function verifyOtpTokenForPurpose(verificationToken, email, purpose) {
+  let payload;
+
+  try {
+    payload = verifyOtpVerificationToken(verificationToken);
+  } catch {
+    throw new AppError("Invalid or expired verification token.", 401);
+  }
+
+  if (
+    !payload ||
+    typeof payload !== "object" ||
+    payload.email !== email ||
+    payload.purpose !== purpose
+  ) {
+    throw new AppError("Verification token does not match this request.", 403);
+  }
+}
+
 
 export async function register(req, res) {
   const result = await registerUser(req.body);
@@ -37,6 +57,12 @@ export async function register(req, res) {
 }
 
 export async function registerUser(input) {
+  verifyOtpTokenForPurpose(
+    input.verificationToken,
+    input.email,
+    "SIGN_UP"
+  );
+
   const existingUser = await prisma.users.findUnique({
     where: { email: input.email },
   });
@@ -109,6 +135,34 @@ export async function registerUser(input) {
     accessToken,
     refreshToken,
   };
+}
+
+export async function resetPassword(req, res) {
+  const { email, password, verificationToken } = req.body;
+
+  verifyOtpTokenForPurpose(verificationToken, email, "PASSWORD_RESET");
+
+  const user = await prisma.users.findUnique({
+    where: { email },
+    select: { id: true },
+  });
+
+  if (!user) {
+    throw new AppError("User does not exist.", 404);
+  }
+
+  await prisma.users.update({
+    where: { id: user.id },
+    data: {
+      password: await hashPassword(password),
+      refresh_token: null,
+    },
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Password reset successfully.",
+  });
 }
 
 // function getUserPlan(user) {
