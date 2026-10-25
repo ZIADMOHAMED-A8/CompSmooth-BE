@@ -15,6 +15,21 @@ export const registerSchema = z.object({
     email: z.string().trim().toLowerCase().email("A valid email is required."),
     name: z.string().trim().min(1, "Name is required."),
     password: passwordSchema,
+    verificationToken: z
+      .string()
+      .trim()
+      .min(1, "A verification token is required."),
+  }),
+});
+
+export const resetPasswordSchema = z.object({
+  body: z.object({
+    email: z.string().trim().toLowerCase().email("A valid email is required."),
+    password: passwordSchema,
+    verificationToken: z
+      .string()
+      .trim()
+      .min(1, "A verification token is required."),
   }),
 });
 

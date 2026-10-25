@@ -3,6 +3,7 @@ import { prisma } from "../../lib/prisma.ts";
 import { AppError } from "../../utils/AppError.js";
 import { compareOtp, hashOtp } from "../../utils/hash.js";
 import { sendOtpEmail } from "../../utils/email.js";
+import { generateOtpVerificationToken } from "../../utils/jwt.js";
 
 const OTP_EXPIRY_MINUTES = 15;
 const MAX_OTP_ATTEMPTS = 5;
@@ -17,10 +18,32 @@ function generateOtp() {
   return randomInt(100000, 1000000).toString();
 }
 
+function sendPasswordResetRequestResponse(res, expiresAt) {
+  return res.status(200).json({
+    success: true,
+    message:
+      "If an account exists with this email, a verification code has been sent.",
+    data: { expiresAt },
+  });
+}
+
 export async function requestOtp(req, res) {
   const { email: destination, purpose } = req.body;
+  const isPasswordReset = purpose === "PASSWORD_RESET";
   const otp = generateOtp();
   const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
+
+  if (isPasswordReset) {
+    const user = await prisma.users.findUnique({
+      where: { email: destination },
+      select: { id: true },
+    });
+
+    if (!user) {
+      return sendPasswordResetRequestResponse(res, expiresAt);
+    }
+  }
+
   const requestCutoff = new Date(
     Date.now() - OTP_REQUEST_COOLDOWN_SECONDS * 1000
   );
@@ -75,17 +98,27 @@ export async function requestOtp(req, res) {
       where: { id: otpRecord.id },
       data: { invalidatedAt: new Date() },
     });
+
+    if (isPasswordReset) {
+      console.error("Password reset OTP delivery failed.", error);
+      return sendPasswordResetRequestResponse(res, expiresAt);
+    }
+
     throw error;
   }
 
   const data = {
     expiresAt,
-    ...(process.env.EXPOSE_OTP_FOR_DEVELOPMENT === "true" ? { otp } : {}),
+    ...(!isPasswordReset && process.env.EXPOSE_OTP_FOR_DEVELOPMENT === "true"
+      ? { otp }
+      : {}),
   };
 
-  res.status(201).json({
+  res.status(isPasswordReset ? 200 : 201).json({
     success: true,
-    message: "Verification code generated successfully.",
+    message: isPasswordReset
+      ? "If an account exists with this email, a verification code has been sent."
+      : "Verification code generated successfully.",
     data,
   });
 }
@@ -93,6 +126,10 @@ export async function requestOtp(req, res) {
 export async function verifyOtp(req, res) {
   const { email: destination, purpose, otp: code } = req.body;
   const now = new Date();
+  const verificationToken = generateOtpVerificationToken({
+    email: destination,
+    purpose,
+  });
 
   const verified = await prisma.$transaction(
     async (tx) => {
@@ -151,5 +188,8 @@ export async function verifyOtp(req, res) {
   res.status(200).json({
     success: true,
     message: "Verification code confirmed successfully.",
+    data: {
+      verificationToken,
+    },
   });
 }

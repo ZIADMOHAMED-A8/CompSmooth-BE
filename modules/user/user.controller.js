@@ -8,6 +8,7 @@ import {
   login,
   refreshToken,
   register,
+  resetPassword,
   updateProfile,
 } from "./user.service.js";
 import {
@@ -15,6 +16,7 @@ import {
   loginSchema,
   refreshTokenSchema,
   registerSchema,
+  resetPasswordSchema,
   updateProfileSchema,
 } from "./user.validation.js";
 import authorize from "../../middlewares/authorize.js";
@@ -23,6 +25,11 @@ import { prisma } from "../../lib/prisma.js";
 const router = Router();
 
 router.post("/signup", validate(registerSchema), asyncWrapper(register));
+router.post(
+  "/reset-password",
+  validate(resetPasswordSchema),
+  asyncWrapper(resetPassword)
+);
 router.post("/login", validate(loginSchema), asyncWrapper(login));
 router.post(
   "/create-checkout-session",
