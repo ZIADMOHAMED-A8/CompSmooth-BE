@@ -2,6 +2,7 @@ import { Router } from "express";
 import asyncWrapper from "../../middlewares/asyncWrapper.js";
 import validate from "../../middlewares/validate.js";
 import {
+  changePassword,
   createCheckoutSession,
   getProfile,
   getUserPlan,
@@ -12,6 +13,7 @@ import {
   updateProfile,
 } from "./user.service.js";
 import {
+  changePasswordSchema,
   createCheckoutSessionSchema,
   loginSchema,
   refreshTokenSchema,
@@ -22,13 +24,25 @@ import {
 import authorize from "../../middlewares/authorize.js";
 import { decodeAccessToken } from "../../utils/decodeToken.js";
 import { prisma } from "../../lib/prisma.js";
+import { checkSignupEmailAvailability } from "./user.middleware.js";
 const router = Router();
 
-router.post("/signup", validate(registerSchema), asyncWrapper(register));
+router.post(
+  "/signup",
+  validate(registerSchema),
+  asyncWrapper(checkSignupEmailAvailability),
+  asyncWrapper(register)
+);
 router.post(
   "/reset-password",
   validate(resetPasswordSchema),
   asyncWrapper(resetPassword)
+);
+router.patch(
+  "/change-password",
+  authorize(["USER"]),
+  validate(changePasswordSchema),
+  asyncWrapper(changePassword)
 );
 router.post("/login", validate(loginSchema), asyncWrapper(login));
 router.post(

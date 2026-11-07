@@ -47,7 +47,27 @@ function verifyOtpTokenForPurpose(verificationToken, email, purpose) {
 
 
 export async function register(req, res) {
-  const result = await registerUser(req.body);
+  let result;
+
+  try {
+    result = await registerUser(req.body);
+  } catch (error) {
+    if (error?.code === "P2002") {
+      return res.status(200).json({
+        success: true,
+        message: "If this email is eligible, your sign-up has been processed.",
+      });
+    }
+
+    throw error;
+  }
+
+  if (!result) {
+    return res.status(200).json({
+      success: true,
+      message: "If this email is eligible, your sign-up has been processed.",
+    });
+  }
 
   res.status(201).json({
     success: true,
@@ -68,7 +88,7 @@ export async function registerUser(input) {
   });
 
   if (existingUser) {
-    throw new AppError("Email is already registered.", 409);
+    return null;
   }
 
   const hashedPassword = await hashPassword(input.password);
@@ -162,6 +182,39 @@ export async function resetPassword(req, res) {
   res.status(200).json({
     success: true,
     message: "Password reset successfully.",
+  });
+}
+
+export async function changePassword(req, res) {
+  const userId = getAuthenticatedUserId(req);
+  const { currentPassword, newPassword } = req.body;
+
+  const user = await prisma.users.findUnique({
+    where: { id: userId },
+    select: { id: true, password: true },
+  });
+
+  if (!user) {
+    throw new AppError("User does not exist.", 404);
+  }
+
+  const passwordsMatching = await compare(currentPassword, user.password);
+
+  if (!passwordsMatching) {
+    throw new AppError("Current password is incorrect.", 400);
+  }
+
+  await prisma.users.update({
+    where: { id: user.id },
+    data: {
+      password: await hashPassword(newPassword),
+      refresh_token: null,
+    },
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Password changed successfully.",
   });
 }
 

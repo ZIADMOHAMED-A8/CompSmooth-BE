@@ -18,11 +18,15 @@ function generateOtp() {
   return randomInt(100000, 1000000).toString();
 }
 
-function sendPasswordResetRequestResponse(res, expiresAt) {
+function sendProtectedOtpRequestResponse(res, purpose, expiresAt) {
+  const message =
+    purpose === "PASSWORD_RESET"
+      ? "If an account exists with this email, a verification code has been sent."
+      : "If this email is eligible to sign up, a verification code has been sent.";
+
   return res.status(200).json({
     success: true,
-    message:
-      "If an account exists with this email, a verification code has been sent.",
+    message,
     data: { expiresAt },
   });
 }
@@ -30,17 +34,19 @@ function sendPasswordResetRequestResponse(res, expiresAt) {
 export async function requestOtp(req, res) {
   const { email: destination, purpose } = req.body;
   const isPasswordReset = purpose === "PASSWORD_RESET";
+  const isSignUp = purpose === "SIGN_UP";
+  const isProtectedPurpose = isPasswordReset || isSignUp;
   const otp = generateOtp();
   const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
 
-  if (isPasswordReset) {
+  if (isProtectedPurpose) {
     const user = await prisma.users.findUnique({
       where: { email: destination },
       select: { id: true },
     });
 
-    if (!user) {
-      return sendPasswordResetRequestResponse(res, expiresAt);
+    if ((isPasswordReset && !user) || (isSignUp && user)) {
+      return sendProtectedOtpRequestResponse(res, purpose, expiresAt);
     }
   }
 
@@ -61,6 +67,10 @@ export async function requestOtp(req, res) {
       });
 
       if (recentOtp) {
+        if (isProtectedPurpose) {
+          return null;
+        }
+
         throw new AppError(
           "Please wait before requesting another verification code.",
           429
@@ -85,6 +95,10 @@ export async function requestOtp(req, res) {
     OTP_TRANSACTION_OPTIONS
   );
 
+  if (!otpRecord) {
+    return sendProtectedOtpRequestResponse(res, purpose, expiresAt);
+  }
+
   try {
     await sendOtpEmail({
       email: destination,
@@ -99,9 +113,9 @@ export async function requestOtp(req, res) {
       data: { invalidatedAt: new Date() },
     });
 
-    if (isPasswordReset) {
-      console.error("Password reset OTP delivery failed.", error);
-      return sendPasswordResetRequestResponse(res, expiresAt);
+    if (isProtectedPurpose) {
+      console.error("Protected OTP delivery failed.", error);
+      return sendProtectedOtpRequestResponse(res, purpose, expiresAt);
     }
 
     throw error;
@@ -109,16 +123,18 @@ export async function requestOtp(req, res) {
 
   const data = {
     expiresAt,
-    ...(!isPasswordReset && process.env.EXPOSE_OTP_FOR_DEVELOPMENT === "true"
+    ...(!isProtectedPurpose && process.env.EXPOSE_OTP_FOR_DEVELOPMENT === "true"
       ? { otp }
       : {}),
   };
 
-  res.status(isPasswordReset ? 200 : 201).json({
+  if (isProtectedPurpose) {
+    return sendProtectedOtpRequestResponse(res, purpose, expiresAt);
+  }
+
+  res.status(201).json({
     success: true,
-    message: isPasswordReset
-      ? "If an account exists with this email, a verification code has been sent."
-      : "Verification code generated successfully.",
+    message: "Verification code generated successfully.",
     data,
   });
 }
